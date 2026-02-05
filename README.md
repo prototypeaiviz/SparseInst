@@ -263,6 +263,14 @@ If you find SparseInst is useful in your research or applications, please consid
 
 ```
 
+### CUSTOM TRAINING FOR AIVIZ
+The only thing you need to do is to register the custom datasets in COCO format in main function of tools/train_net.py.
+In tools/train_net.py, in main function, in register_coco_instances, change 'json_file' and 'image_root' paths based on your system.
+For training, download the pickle file from here: https://drive.google.com/file/d/1Ee6nPXlj1eewAnooYtoPtLzbRp_mDxfB/view?usp=sharing, then make a directory in
+your working directory(SparseInst) named 'pretrained_models' and put the pickle file there.
+Now everything is ready, train the model with the following command:
+python tools/train_net.py --config-file configs/sparse_inst_r50_base.yaml --num-gpus 1
+
 
 ## License
 
