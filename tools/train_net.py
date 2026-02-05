@@ -3,7 +3,7 @@ import sys
 import itertools
 from typing import Any, Dict, List, Set
 import torch
-
+from detectron2.data.datasets import register_coco_instances
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
@@ -160,6 +160,14 @@ def setup(args):
 
 
 def main(args):
+    register_coco_instances(
+        "pills_train", {}, f"/home/mehran/Desktop/coco_detectron/train.json", f"/home/mehran/Desktop/Detectron/train/images"
+    )
+
+    register_coco_instances(
+        "pills_val", {}, f"/home/mehran/Desktop/coco_detectron/val.json", f"/home/mehran/Desktop/Detectron/val/images"
+    )
+
     cfg = setup(args)
 
     if args.eval_only:
