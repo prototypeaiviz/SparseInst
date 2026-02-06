@@ -10,3 +10,6 @@ DATASETS:
   TRAIN: ("pills_train",)
   TEST: ("pills_val",)
 OUTPUT_DIR: "output/sparse_inst_r50_base"
+SOLVER:
+  IMS_PER_BATCH: 1
+#  MAX_ITER: 270000
