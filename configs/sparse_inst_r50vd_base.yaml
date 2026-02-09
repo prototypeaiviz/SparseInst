@@ -4,7 +4,15 @@ MODEL:
   BACKBONE:
     FREEZE_AT: 0
     NAME: "build_resnet_vd_backbone"
+  SEM_SEG_HEAD:
+    NUM_CLASSES: 1
   SPARSE_INST:
     DECODER:
       NAME: "BaseIAMDecoder"
 OUTPUT_DIR: "output/sparse_inst_r50_base"
+DATASETS:
+  TRAIN: ("pills_train",)
+  TEST: ("pills_val",)
+SOLVER:
+  IMS_PER_BATCH: 8
+  MAX_ITER: 15000

@@ -26,6 +26,7 @@ from detectron2.evaluation import (
 
 sys.path.append(".")
 from sparseinst import add_sparse_inst_config, COCOMaskEvaluator
+import wandb
 
 
 class Trainer(DefaultTrainer):
@@ -161,15 +162,21 @@ def setup(args):
 
 def main(args):
     register_coco_instances(
-        "pills_train", {}, f"/home/mehran/Desktop/coco_detectron/train.json", f"/home/mehran/Desktop/Detectron/train/images"
+        "pills_train", {}, f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/train.json", f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/train/imgs"
     )
 
     register_coco_instances(
-        "pills_val", {}, f"/home/mehran/Desktop/coco_detectron/val.json", f"/home/mehran/Desktop/Detectron/val/images"
+        "pills_val", {}, f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/val.json", f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/val/imgs"
     )
 
     cfg = setup(args)
-
+    wandb.init(
+        entity="aiviz",
+        project="Bechmarking_Detectron",
+        name="running_sparse_inst",
+        config=cfg,
+        sync_tensorboard=True
+    )
     if args.eval_only:
         model = Trainer.build_model(cfg)
         DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(

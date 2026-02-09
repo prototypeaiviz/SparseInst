@@ -1,7 +1,15 @@
 _BASE_: "Base-SparseInst.yaml"
 MODEL:
   WEIGHTS: "pretrained_models/resnet50d_ra2-464e36ba.pth"
+  SEM_SEG_HEAD:
+    NUM_CLASSES: 1
   BACKBONE:
     FREEZE_AT: 0
     NAME: "build_resnet_vd_backbone"
 OUTPUT_DIR: "output/sparse_inst_r50vd_giam"
+DATASETS:
+  TRAIN: ("pills_train",)
+  TEST: ("pills_val",)
+SOLVER:
+  IMS_PER_BATCH: 8
+  MAX_ITER: 15000
