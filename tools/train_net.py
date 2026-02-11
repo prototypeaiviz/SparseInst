@@ -43,6 +43,7 @@ class Trainer(DefaultTrainer):
             output_folder = os.path.join(cfg.OUTPUT_DIR, "inference")
         evaluator_list = []
         evaluator_type = MetadataCatalog.get(dataset_name).evaluator_type
+        MetadataCatalog.get(dataset_name).set(thing_classes=["Pill"])
         if evaluator_type in ["sem_seg", "coco_panoptic_seg"]:
             evaluator_list.append(
                 SemSegEvaluator(
@@ -173,7 +174,7 @@ def main(args):
     wandb.init(
         entity="aiviz",
         project="Bechmarking_Detectron",
-        name="running_sparse_inst",
+        name="running_sparse_inst_Final_LONG_RUN",
         config=cfg,
         sync_tensorboard=True
     )
