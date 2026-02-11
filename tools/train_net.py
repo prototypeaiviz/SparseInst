@@ -23,6 +23,7 @@ from detectron2.evaluation import (
     SemSegEvaluator,
     verify_results,
 )
+from datetime import datetime
 
 sys.path.append(".")
 from sparseinst import add_sparse_inst_config, COCOMaskEvaluator
@@ -154,6 +155,9 @@ def setup(args):
     add_sparse_inst_config(cfg)
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    cfg.OUTPUT_DIR = cfg.OUTPUT_DIR+f"_{timestamp}"
     cfg.freeze()
     default_setup(cfg, args)
     # Setup logger for "sparseinst" module
