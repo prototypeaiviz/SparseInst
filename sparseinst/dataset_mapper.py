@@ -23,6 +23,13 @@ def build_transform_gen(cfg, is_train):
     Returns:
         list[Augmentation]
     """
+    '''
+    This function defines how the images should be modified during training and testing.
+    Training: It sets up random horizontal/vertical flips 
+                                and "Shortest Edge" resizing 
+    (e.g., resizing an image so its smaller side is 800px while keeping the aspect ratio).
+    Testing: It only applies resizing to ensure the model sees images at the expected scale.
+    '''
     augmentation = []
 
     if is_train:
@@ -40,16 +47,23 @@ def build_transform_gen(cfg, is_train):
                 vertical=cfg.INPUT.RANDOM_FLIP == "vertical",
             )
         )
-    if is_train:
+    # apply same augmentation for both
+    # if is_train:
         # 800,1333, 0.6
         # 600, 1000
         # aspect ratio fixed
-        augmentation.append(
-            T.ResizeShortestEdge(min_size, max_size, sample_style)
-        )
+    augmentation.append(
+        T.ResizeShortestEdge(min_size, max_size, sample_style)
+    )
     return augmentation
 
+'''
+In simple terms, a Mapper is the "bridge" between your raw data (images and JSON labels) and the neural network.
+Its job is to load images, 
+            apply data augmentations (like flipping or cropping), 
+            and format everything into tensors that a GPU can understand.
 
+'''
 class SparseInstDatasetMapper:
     """
     A callable which takes a dataset dict in Detectron2 Dataset format,
@@ -69,8 +83,11 @@ class SparseInstDatasetMapper:
     # @classmethod
 
     def __init__(self, cfg, is_train: bool = True):
+        # applying RandomFlip,ResizeShortestEdge
         augs = build_transform_gen(cfg, is_train)
         self.default_aug = T.AugmentationList(augs)
+        # If the image is cropped, the original bounding boxes might not be accurate anymore.
+        # The flag recompute_boxes ensures the code calculates new, tight boxes based on the remaining mask.
         if cfg.INPUT.CROP.ENABLED and is_train:
             crop_gen = [
                 T.ResizeShortestEdge([400, 500, 600], sample_style='choice'),
@@ -114,7 +131,7 @@ class SparseInstDatasetMapper:
             sem_seg_gt = None
 
         aug_input = T.AugInput(image, sem_seg=sem_seg_gt)
-
+        # Applying the augmentations that were set previously
         if self.crop_aug is None:
             transforms = self.default_aug(aug_input)
         else:
