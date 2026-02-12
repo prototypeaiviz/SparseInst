@@ -6,10 +6,18 @@ MODEL:
   SPARSE_INST:
     DECODER:
       NAME: "BaseIAMDecoder"
+      NUM_CLASSES: 1
 DATASETS:
   TRAIN: ("pills_train",)
   TEST: ("pills_val",)
 OUTPUT_DIR: "output/sparse_inst_r50_base"
 SOLVER:
   IMS_PER_BATCH: 8
-  MAX_ITER: 15000
+  BASE_LR: 0.00005        # Slightly increased for better adaptation
+  STEPS: (15000, 20000)   # Drop earlier if the model converges quickly
+  MAX_ITER: 25000
+  WARMUP_ITERS: 1000      # Added for stability
+  WEIGHT_DECAY: 0.05
+  CHECKPOINT_PERIOD: 5000
+TEST:
+  EVAL_PERIOD: 1000
