@@ -1,0 +1,14 @@
+dataset:
+  dataset_root: "/media/aiviz05/New Volume/Data/TISSMART/Detectron"      # Path to dataset root directory
+  config_file: ""
+  save_path: ""         # Where to save outputs, logs, checkpoints
+  run_id: ""            # Optional: unique identifier for the run
+  run_name: ""
+  start_from_running: ''
+training:
+  run_name: "Debugging_runs_to_delete"
+  seed: 5
+  device: "cuda"
+  arch: "sparse_inst_r50_base"
+  run_from_checkpoint: False
+

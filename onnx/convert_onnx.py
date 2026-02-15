@@ -14,62 +14,62 @@ from detectron2.config import get_cfg
 from sparseinst import add_sparse_inst_config
 
 
-class PyramidPoolingModuleONNX(nn.Module):
-    def __init__(self, in_channels, channels, pool_sizes=(1, 2, 3, 6)):
-        super().__init__()
-        self.pool_sizes = pool_sizes
-        self.stages = nn.ModuleList([
-            Conv2d(in_channels, channels, 1) for _ in pool_sizes
-        ])
-        self.bottleneck = Conv2d(
-            in_channels + len(pool_sizes) * channels, in_channels, 1)
-
-    def forward(self, feats):
-        h, w = feats.shape[-2:]
-        priors = []
-
-        for i, pool_size in enumerate(self.pool_sizes):
-            # Instead of Pooling, we use Interpolate to shrink the tensor.
-            # This is mathematically identical to 'Area' interpolation or pooling,
-            # but ONNX handles this 'Resize' op much better with dynamic axes.
-            x = F.interpolate(feats, size=(int(pool_size), int(pool_size)),
-                              mode='bilinear', align_corners=False)
-            x = self.stages[i](x)
-            # Resize back to original
-            x = F.interpolate(x, size=(h, w), mode='bilinear', align_corners=False)
-            priors.append(x)
-
-        priors.append(feats)
-        out = F.relu_(self.bottleneck(torch.cat(priors, 1)))
-        return out
 # class PyramidPoolingModuleONNX(nn.Module):
-#
-#     def __init__(self, in_channels, channels, input_size, pool_sizes=(1, 2, 3, 6)):
+#     def __init__(self, in_channels, channels, pool_sizes=(1, 2, 3, 6)):
 #         super().__init__()
-#         self.stages = []
-#         self.stages = nn.ModuleList(
-#             [self._make_stage(in_channels, channels, input_size, pool_size)
-#              for pool_size in pool_sizes]
-#         )
+#         self.pool_sizes = pool_sizes
+#         self.stages = nn.ModuleList([
+#             Conv2d(in_channels, channels, 1) for _ in pool_sizes
+#         ])
 #         self.bottleneck = Conv2d(
 #             in_channels + len(pool_sizes) * channels, in_channels, 1)
 #
-#     def _make_stage(self, features, out_features, input_size, pool_size):
-#         stride_y = math.floor((input_size[0] / pool_size))
-#         stride_x = math.floor((input_size[1] / pool_size))
-#         kernel_y = input_size[0] - (pool_size - 1) * stride_y
-#         kernel_x = input_size[1] - (pool_size - 1) * stride_x
-#         prior = nn.AvgPool2d(kernel_size=(
-#             kernel_y, kernel_x), stride=(stride_y, stride_x))
-#         conv = Conv2d(features, out_features, 1)
-#         return nn.Sequential(prior, conv)
-#
 #     def forward(self, feats):
-#         h, w = feats.size(2), feats.size(3)
-#         priors = [F.interpolate(
-#             input=F.relu_(stage(feats)), size=(h, w), mode='bilinear', align_corners=False) for stage in self.stages] + [feats]
+#         h, w = feats.shape[-2:]
+#         priors = []
+#
+#         for i, pool_size in enumerate(self.pool_sizes):
+#             # Instead of Pooling, we use Interpolate to shrink the tensor.
+#             # This is mathematically identical to 'Area' interpolation or pooling,
+#             # but ONNX handles this 'Resize' op much better with dynamic axes.
+#             x = F.interpolate(feats, size=(int(pool_size), int(pool_size)),
+#                               mode='bilinear', align_corners=False)
+#             x = self.stages[i](x)
+#             # Resize back to original
+#             x = F.interpolate(x, size=(h, w), mode='bilinear', align_corners=False)
+#             priors.append(x)
+#
+#         priors.append(feats)
 #         out = F.relu_(self.bottleneck(torch.cat(priors, 1)))
 #         return out
+class PyramidPoolingModuleONNX(nn.Module):
+
+    def __init__(self, in_channels, channels, input_size, pool_sizes=(1, 2, 3, 6)):
+        super().__init__()
+        self.stages = []
+        self.stages = nn.ModuleList(
+            [self._make_stage(in_channels, channels, input_size, pool_size)
+             for pool_size in pool_sizes]
+        )
+        self.bottleneck = Conv2d(
+            in_channels + len(pool_sizes) * channels, in_channels, 1)
+
+    def _make_stage(self, features, out_features, input_size, pool_size):
+        stride_y = math.floor((input_size[0] / pool_size))
+        stride_x = math.floor((input_size[1] / pool_size))
+        kernel_y = input_size[0] - (pool_size - 1) * stride_y
+        kernel_x = input_size[1] - (pool_size - 1) * stride_x
+        prior = nn.AvgPool2d(kernel_size=(
+            kernel_y, kernel_x), stride=(stride_y, stride_x))
+        conv = Conv2d(features, out_features, 1)
+        return nn.Sequential(prior, conv)
+
+    def forward(self, feats):
+        h, w = feats.size(2), feats.size(3)
+        priors = [F.interpolate(
+            input=F.relu_(stage(feats)), size=(h, w), mode='bilinear', align_corners=False) for stage in self.stages] + [feats]
+        out = F.relu_(self.bottleneck(torch.cat(priors, 1)))
+        return out
 
 
 def main():
@@ -81,8 +81,8 @@ def main():
         metavar="FILE",
         help="path to config file",
     )
-    parser.add_argument('--width', default=640, type=int)
-    parser.add_argument('--height', default=640, type=int)
+    parser.add_argument('--width', default=853, type=int)
+    parser.add_argument('--height', default=853, type=int)
     parser.add_argument('--level', default=0, type=int)
     parser.add_argument(
         "--output",
@@ -134,27 +134,6 @@ def main():
 
     model.forward = model.forward_test
 
-    # torch.onnx.export(
-    #     model,
-    #     dummy_input,
-    #     args.output,
-    #     verbose=True,
-    #     input_names=input_names,
-    #     output_names=output_names,
-    #     keep_initializers_as_inputs=False,
-    #     opset_version=12,
-    # )
-    # Define which dimensions are allowed to change
-    dynamic_axes = {
-        "input_image": {
-            0: "batch_size",
-            2: "height",
-            3: "width"
-        },
-        "scores": {0: "batch_size"},
-        "masks": {0: "batch_size", 2: "mask_h", 3: "mask_w"}
-    }
-
     torch.onnx.export(
         model,
         dummy_input,
@@ -163,9 +142,30 @@ def main():
         input_names=input_names,
         output_names=output_names,
         keep_initializers_as_inputs=False,
-        opset_version=14,
-        dynamic_axes=dynamic_axes  # Add this line
+        opset_version=12,
     )
+    # Define which dimensions are allowed to change
+    # dynamic_axes = {
+    #     "input_image": {
+    #         0: "batch_size",
+    #         2: "height",
+    #         3: "width"
+    #     },
+    #     "scores": {0: "batch_size"},
+    #     "masks": {0: "batch_size", 2: "mask_h", 3: "mask_w"}
+    # }
+    #
+    # torch.onnx.export(
+    #     model,
+    #     dummy_input,
+    #     args.output,
+    #     verbose=True,
+    #     input_names=input_names,
+    #     output_names=output_names,
+    #     keep_initializers_as_inputs=False,
+    #     opset_version=14,
+    #     dynamic_axes=dynamic_axes  # Add this line
+    # )
 
     logger.info("Done. The onnx model is saved into {}.".format(args.output))
 
