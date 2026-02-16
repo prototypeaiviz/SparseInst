@@ -13,10 +13,10 @@ from utils_cv import (preprocess_image ,
                       filter_prediction_exclusion_boxes ,
                       rescale_mask_to_original)
 def run_onnx(ort_session,
-             image):
+             image,input_size):
     # resized_image, resize_scale = resize_pad(image.data, min_size_test=640, max_size_test=853, canvas_w=640,
     #                                          canvas_h=640)
-    resized_image, resize_scale = preprocess_image(image.data,(640,640))
+    resized_image, resize_scale = preprocess_image(image.data,input_size)
     rgb_image = cv2.cvtColor(resized_image, cv2.COLOR_BGR2RGB)
     rgb_image_float = rgb_image.astype('float32')
     rgb_image_float = rgb_image_float.transpose(2, 0, 1)
@@ -70,7 +70,7 @@ def prepare_post_processing(image,
         prediction_mask_cache[ann_id] = resize_prediction_mask
     return (empty_mask ,
             prediction_mask_cache)
-def main(test_json,test_images,onnx_path,save_path,score_threshold,mask_threshold):
+def main(test_json,test_images,onnx_path,save_path,score_threshold,mask_threshold,input_size):
     dataset = CocoDataset(
         images_dir=test_images,
         annotation_file=test_json
@@ -97,7 +97,7 @@ def main(test_json,test_images,onnx_path,save_path,score_threshold,mask_threshol
         for box in exclusion_boxes_modified:
             cv2.rectangle(exclusion_zone_mask, (box[0], box[1]), (box[0] + box[2], box[1] + box[3]), 255, -1)
         mask_gt,gt_mask_cache = prepare_gn_annotations(image, exclusion_boxes_modified)
-        scores,masks, resize_scale= run_onnx(ort_session, image)
+        scores,masks, resize_scale= run_onnx(ort_session, image,input_size)
         empty_mask,prediction_mask_cache = prepare_post_processing(image,
                                             scores,
                                             masks,
@@ -134,9 +134,9 @@ def main(test_json,test_images,onnx_path,save_path,score_threshold,mask_threshol
 if __name__ == '__main__':
     test_path_json = "/media/aiviz05/New Volume/Data/TISSMART/Detectron/cvat-benchmark/cvat-output-coco.json"
     test_path_images = "/media/aiviz05/New Volume/Data/TISSMART/Detectron/cvat-benchmark/images"
-    folder_containing_onnx_json = "/home/aiviz05/Projects/SparseInst/output/sparse_inst_r50_base_20260211_175840/final_model.onnx"
-    model_score_threshold = 0.5
-    model_mask_threshold = 0.5
+    folder_containing_onnx_json = "/home/aiviz05/Projects/SparseInst/output/sparse_inst_r50_base_20260213_161141/final_model.onnx"
+    model_score_threshold = 0.005
+    model_mask_threshold = 0.2
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     new_run_name = f'{timestamp}_onnxtest_runtime_results'
     checkpoints_dir = os.path.join('bin', new_run_name)
@@ -146,4 +146,5 @@ if __name__ == '__main__':
          onnx_path = folder_containing_onnx_json,
          score_threshold=model_score_threshold,
          mask_threshold=model_mask_threshold,
-         save_path=checkpoints_dir)
+         save_path=checkpoints_dir,
+         input_size=(864,864))

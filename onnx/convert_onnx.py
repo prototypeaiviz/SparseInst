@@ -81,8 +81,8 @@ def main():
         metavar="FILE",
         help="path to config file",
     )
-    parser.add_argument('--width', default=853, type=int)
-    parser.add_argument('--height', default=853, type=int)
+    parser.add_argument('--width', default=864, type=int)
+    parser.add_argument('--height', default=864, type=int)
     parser.add_argument('--level', default=0, type=int)
     parser.add_argument(
         "--output",
