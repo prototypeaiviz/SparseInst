@@ -99,3 +99,14 @@ def add_sparse_inst_config(cfg):
     cfg.MODEL.CSPNET.NAME = "darknet53"  # Architecture name
     cfg.MODEL.CSPNET.NORM = ""  # Normalization type
     cfg.MODEL.CSPNET.OUT_FEATURES = ["csp1", "csp2", "csp3", "csp4"]  # Feature levels
+
+    # [LoRA] - Low-Rank Adaptation Config
+    cfg.MODEL.LORA = CN()
+    cfg.MODEL.LORA.ENABLED = False
+    cfg.MODEL.LORA.RANK = 8
+    cfg.MODEL.LORA.ALPHA = 16.0
+
+    # Target modules
+    cfg.MODEL.LORA.BACKBONE = False
+    cfg.MODEL.LORA.ENCODER = False
+    cfg.MODEL.LORA.DECODER = False
