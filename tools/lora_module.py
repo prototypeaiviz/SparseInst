@@ -1,15 +1,11 @@
-
 """
-LoRA (Low-Rank Adaptation) for Convolutional Neural Networks
+LoRA (Low-Rank Adaptation) for SparseInst
 """
-
-
-from detectron2.config import get_cfg
-from detectron2.modeling import build_model
-from sparseinst import add_sparse_inst_config
 
 from typing import Iterable, Tuple, Optional, Dict
-# from models.unetpp import UnetPP
+from sparseinst import add_sparse_inst_config
+from detectron2.modeling import build_model
+from detectron2.config import get_cfg
 import torch.nn as nn
 import torch
 import math
@@ -77,7 +73,7 @@ class LoRAConv2d(nn.Module):
             rank,
             kernel_size=1,
             stride=self.stride,
-            padding=0,
+            padding=self.padding,
             dilation=self.dilation,
             bias=False
         )
@@ -204,7 +200,7 @@ def _recursive_replace_conv_with_lora(
             continue
 
         # If this module is exactly the target class, replace it
-        if isinstance(module, target_class) and module.kernel_size != (3, 3):
+        if isinstance(module, target_class) and (module.kernel_size == (3, 3) or module.kernel_size == 3):
             parent._modules[name] = LoRAConv2d(module, rank=rank, alpha=alpha)
             replaced += 1
         elif isinstance(module, nn.Module):
@@ -307,8 +303,8 @@ def freeze_all_but_lora(model: nn.Module) -> None:
     # Unfreeze task-specific modules that were skipped from LoRA
     # These modules should be trained fully for task adaptation
     for name, module in model.named_modules():
-        # Unfreeze segmentation head (task-specific output layer)
-        if 'segmentation_head' in name or 'classification_head' in name:
+        # Unfreeze SparseInst prediction heads
+        if any(head_name in name for head_name in ['iam_conv', 'cls_score', 'mask_kernel', 'objectness', 'projection']):
             for p in module.parameters():
                 p.requires_grad = True
 
@@ -426,6 +422,56 @@ def replace_lora_wrappers_with_base_conv(model: nn.Module) -> None:
     _replace(model)
 
 
+def apply_lora_from_config(model, cfg):
+    """
+    Apply LoRA to the model based on Detectron2 configuration.
+    Wraps apply_lora_to_model.
+    """
+    if not cfg.MODEL.LORA.ENABLED:
+        return model
+        
+    rank = cfg.MODEL.LORA.RANK
+    alpha = cfg.MODEL.LORA.ALPHA
+    
+    targets = []
+    # skips = {}        ### I need to add this part
+
+    if cfg.MODEL.LORA.BACKBONE:
+        targets.append("backbone")
+    if cfg.MODEL.LORA.ENCODER:
+        targets.append("encoder")
+    if cfg.MODEL.LORA.DECODER:
+        targets.append("decoder")
+
+    # Add Skip to the code
+    # if cfg.MODEL.LORA.SKIP:
+    #     pass
+
+    print(f"Applying LoRA with Rank={rank}, Alpha={alpha}...")
+    print(f"Targets: {targets}")
+    
+    total, per_target = apply_lora_to_model(
+        model,
+        targets=targets,
+        rank=rank,
+        alpha=alpha,
+        skip=None
+    )
+    
+    print(f"Replaced {total} Conv2d layers.")
+    for t, count in per_target.items():
+        print(f"  - {t}: {count} layers")
+
+    print("Freezing base parameters and BN...")
+    freeze_all_but_lora(model)
+    set_batchnorm_eval(model)
+    
+    stats = count_parameters(model)
+    print(f"LoRA Applied. Trainable Params: {stats['trainable']:,} / {stats['total']:,} "
+          f"({100 * stats['trainable'] / stats['total']:.2f}%)\n")
+    
+    return model
+
 if __name__ == "__main__":
     print("=" * 60)
     print("LoRA Application Test: SparseInst with ResNet50 Encoder")
@@ -438,9 +484,6 @@ if __name__ == "__main__":
     cfg.MODEL.SPARSE_INST.DECODER.NUM_CLASSES = 1
     model = build_model(cfg)
 
-    # Create model
-    # model = UnetPP(encoder_name=cfg.model.encoder, num_classes=cfg.model.num_classes).to(device)
-
     # Count original parameters
     print("\n1. Original Model:")
     stats_original = count_parameters(model)
@@ -449,23 +492,17 @@ if __name__ == "__main__":
 
     # Define LoRA configuration
     targets = ['backbone', 'encoder', 'decoder']
-    # skip = {
-    #     # Skip early encoder layers
-    #     "encoder": ["conv1", "bn1", "relu", "maxpool", "layer1"],
-    #     # Skip final segmentation head (task-specific layer)
-    #     "decoder": ["segmentation_head"]
-    # }
 
     # Apply LoRA
     print("\n2. Applying LoRA:")
-    print(f"   Rank: 4, Alpha: 16.0")
+    print(f"   Rank: 8, Alpha: 16.0")
     print(f"   Targets: {targets}")
     # print(f"   Skip: {skip}")
 
     total, per_target = apply_lora_to_model(
         model,
         targets=targets,
-        rank=4,
+        rank=8,
         alpha=16.0,
         skip=None
     )
