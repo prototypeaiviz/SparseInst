@@ -73,7 +73,7 @@ class LoRAConv2d(nn.Module):
             rank,
             kernel_size=1,
             stride=self.stride,
-            padding=self.padding,
+            padding=0,
             dilation=self.dilation,
             bias=False
         )
