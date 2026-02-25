@@ -1,17 +1,13 @@
-import os
-import sys
-import itertools
-from typing import Any, Dict, List, Set
-import torch
-from detectron2.data.datasets import register_coco_instances
-import detectron2.utils.comm as comm
-from detectron2.checkpoint import DetectionCheckpointer
-from detectron2.config import get_cfg
-from detectron2.utils.logger import setup_logger
-from detectron2.data import MetadataCatalog, build_detection_train_loader, DatasetMapper
 from detectron2.engine import AutogradProfiler, DefaultTrainer, default_argument_parser, default_setup, launch
+from detectron2.data import MetadataCatalog, build_detection_train_loader, DatasetMapper
 from detectron2.evaluation import COCOEvaluator, verify_results
 from detectron2.solver.build import maybe_add_gradient_clipping
+from detectron2.data.datasets import register_coco_instances
+from detectron2.checkpoint import DetectionCheckpointer
+from detectron2.utils.logger import setup_logger
+from typing import Any, Dict, List, Set
+from detectron2.config import get_cfg
+import detectron2.utils.comm as comm
 from detectron2.evaluation import (
     CityscapesInstanceEvaluator,
     CityscapesSemSegEvaluator,
@@ -24,13 +20,28 @@ from detectron2.evaluation import (
     verify_results,
 )
 from datetime import datetime
+import itertools
+import torch
+import sys
+import os
 
 sys.path.append(".")
 from sparseinst import add_sparse_inst_config, COCOMaskEvaluator
+from lora_module import apply_lora_from_config
 import wandb
 
 
+
 class Trainer(DefaultTrainer):
+    @classmethod
+    def build_model(cls, cfg):
+        """
+        Build the model and apply LoRA based on configuration before training starts.
+        """
+        model = DefaultTrainer.build_model(cfg)
+        model = apply_lora_from_config(model, cfg)
+        return model
+
 
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
@@ -167,11 +178,11 @@ def setup(args):
 
 def main(args):
     register_coco_instances(
-        "pills_train", {}, f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/train.json", f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/train/imgs"
+        "pills_train", {}, f"/home/mehran/Desktop/coco_detectron/train.json", f"/home/mehran/Desktop/Detectron/train/images"
     )
 
     register_coco_instances(
-        "pills_val", {}, f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/val.json", f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/val/imgs"
+        "pills_val", {}, f"/home/mehran/Desktop/coco_detectron/val.json", f"/home/mehran/Desktop/Detectron/val/images"
     )
 
     cfg = setup(args)
