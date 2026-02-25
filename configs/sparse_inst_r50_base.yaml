@@ -2,17 +2,24 @@ _BASE_: "Base-SparseInst.yaml"
 MODEL:
   SEM_SEG_HEAD:
     NUM_CLASSES: 1
-  WEIGHTS: "pretrained_models/R-50.pkl"
+  WEIGHTS: "/home/mehran/Git-Thesis/SparseInst/pretrained_models/R-50.pkl"
   SPARSE_INST:
     DECODER:
       NAME: "BaseIAMDecoder"
       NUM_CLASSES: 1
+  LORA:
+    ENABLED: True
+    RANK: 8
+    ALPHA: 16.0
+    BACKBONE: False
+    ENCODER: True
+    DECODER: True
 DATASETS:
   TRAIN: ("pills_train",)
   TEST: ("pills_val",)
 OUTPUT_DIR: "output/sparse_inst_r50_base"
 SOLVER:
-  IMS_PER_BATCH: 8
+  IMS_PER_BATCH: 1
   BASE_LR: 0.00005        # Slightly increased for better adaptation
   STEPS: (15000, 20000)   # Drop earlier if the model converges quickly
   MAX_ITER: 25000
