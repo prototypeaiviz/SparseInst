@@ -8,7 +8,7 @@ MODEL:
       NAME: "BaseIAMDecoder"
       NUM_CLASSES: 1
   LORA:
-    ENABLED: True
+    ENABLED: False
     RANK: 8
     ALPHA: 16.0
     BACKBONE: False
