@@ -83,7 +83,7 @@ def test_sparseinst_speed(cfg, fp16=False):
                 instances = output.to("cpu")
                 predicted_masks = instances.pred_masks
                 predicted_scores = instances.scores
-                for idx, (mask,score) in enumerate(zip(predicted_masks, predicted_scores)):
+                for i, (mask,score) in enumerate(zip(predicted_masks, predicted_scores)):
                     img_path = os.path.basename(inputs[0]["file_name"])
                     mask_np = mask.numpy()
                     score_np = score.numpy()
@@ -127,7 +127,8 @@ def test_sparseinst_speed(cfg, fp16=False):
                         vis_img = vis_output.get_image()
 
                         # 5. Save (BGR for cv2)
-                        out_filename = os.path.join(current_visualize_name, f"res_{idx}.jpg")
+                        out_img_name = f'res{idx}.jpg'
+                        out_filename = os.path.join(current_visualize_name, out_img_name)
                         cv2.imwrite(out_filename, vis_img[:, :, ::-1])
                         print(f"Saved: {out_filename} with shape {vis_img.shape}")
                    # evaluate
@@ -180,8 +181,8 @@ if __name__ == '__main__':
     register_coco_instances(
         "pills_val",
         {},
-        f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/cvat-benchmark/cvat-output-coco.json",
-        f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/cvat-benchmark/images"
+        f"/home/mehran/Desktop/SparseInst_DATA/cvat-benchmark/cvat-output-coco.json",
+        f"/home/mehran/Desktop/SparseInst_DATA/cvat-benchmark/images"
     )
     cfg = setup(args)
     test_sparseinst_speed(cfg, fp16=args.fp16)
