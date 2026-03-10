@@ -19,12 +19,12 @@ DATASETS:
   TEST: ("pills_val",)
 OUTPUT_DIR: "output/sparse_inst_r50_base"
 SOLVER:
-  IMS_PER_BATCH: 1
+  IMS_PER_BATCH: 32
   BASE_LR: 0.00005        # Slightly increased for better adaptation
-  STEPS: (15000, 20000)   # Drop earlier if the model converges quickly
+  STEPS: (19000, 22000)   # Drop earlier if the model converges quickly
   MAX_ITER: 25000
   WARMUP_ITERS: 1000      # Added for stability
   WEIGHT_DECAY: 0.05
-  CHECKPOINT_PERIOD: 5000
+  CHECKPOINT_PERIOD: 2000
 TEST:
   EVAL_PERIOD: 1000

@@ -168,7 +168,7 @@ def setup(args):
     cfg.merge_from_list(args.opts)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    cfg.OUTPUT_DIR = cfg.OUTPUT_DIR+f"_{timestamp}"
+    cfg.OUTPUT_DIR = cfg.OUTPUT_DIR + f"_dual_LoRA_4_3_{timestamp}"
     cfg.freeze()
     default_setup(cfg, args)
     # Setup logger for "sparseinst" module
@@ -178,18 +178,18 @@ def setup(args):
 
 def main(args):
     register_coco_instances(
-        "pills_train", {}, f"/home/mehran/Desktop/coco_detectron/train.json", f"/home/mehran/Desktop/Detectron/train/images"
+        "pills_train", {}, f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_ALL_MONO/train.json", f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_images/train/imgs"
     )
 
     register_coco_instances(
-        "pills_val", {}, f"/home/mehran/Desktop/coco_detectron/val.json", f"/home/mehran/Desktop/Detectron/val/images"
+        "pills_val", {}, f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_ALL_MONO/val.json", f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_images/val/imgs"
     )
 
     cfg = setup(args)
     wandb.init(
-        entity="aiviz",
-        project="Bechmarking_Detectron",
-        name="running_sparse_inst_Final_LONG_RUN",
+        entity="zeidimehran-aiviz-italia",
+        project="SparseInst",
+        name="SparseInst_Mono_LongRun",
         config=cfg,
         sync_tensorboard=True
     )
