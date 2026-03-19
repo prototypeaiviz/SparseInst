@@ -168,7 +168,7 @@ def setup(args):
     cfg.merge_from_list(args.opts)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    cfg.OUTPUT_DIR = cfg.OUTPUT_DIR + f"_dual_LoRA_4_3_{timestamp}"
+    cfg.OUTPUT_DIR = cfg.OUTPUT_DIR + f"Dual_NO_LORA_frozenBackbone_{timestamp}"
     cfg.freeze()
     default_setup(cfg, args)
     # Setup logger for "sparseinst" module
@@ -177,19 +177,28 @@ def setup(args):
 
 
 def main(args):
+    # register_coco_instances(
+    #     "pills_train", {}, f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_ALL_MONO/train.json", f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_images/train/imgs"
+    # )
+    #
+    # register_coco_instances(
+    #     "pills_val", {}, f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_ALL_MONO/val.json", f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_images/val/imgs"
+    # )
     register_coco_instances(
-        "pills_train", {}, f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_ALL_MONO/train.json", f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_images/train/imgs"
+        "pills_train", {},
+        f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/labelings/train.json",
+        f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/data/train/imgs"
     )
 
     register_coco_instances(
-        "pills_val", {}, f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_ALL_MONO/val.json", f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_images/val/imgs"
+        "pills_val", {},
+        f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/labelings/val.json",
+        f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/data/val/imgs"
     )
-
     cfg = setup(args)
     wandb.init(
-        entity="zeidimehran-aiviz-italia",
         project="SparseInst",
-        name="SparseInst_Mono_LongRun",
+        name="Dual_NO_LORA_frozenBackbone_SparseInst_LongRun",
         config=cfg,
         sync_tensorboard=True
     )

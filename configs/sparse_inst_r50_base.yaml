@@ -2,7 +2,7 @@ _BASE_: "Base-SparseInst.yaml"
 MODEL:
   SEM_SEG_HEAD:
     NUM_CLASSES: 1
-  WEIGHTS: "/home/mehran/Git-Thesis/SparseInst/pretrained_models/R-50.pkl"
+  WEIGHTS: "/home/aiviz05/Projects/SparseInst/output/PillNet_March_10/model_final.pth"
   SPARSE_INST:
     DECODER:
       NAME: "BaseIAMDecoder"
@@ -21,8 +21,8 @@ OUTPUT_DIR: "output/sparse_inst_r50_base"
 SOLVER:
   IMS_PER_BATCH: 32
   BASE_LR: 0.00005        # Slightly increased for better adaptation
-  STEPS: (19000, 22000)   # Drop earlier if the model converges quickly
-  MAX_ITER: 25000
+  STEPS: (12000, 13500)   # Drop earlier if the model converges quickly
+  MAX_ITER: 15000
   WARMUP_ITERS: 1000      # Added for stability
   WEIGHT_DECAY: 0.05
   CHECKPOINT_PERIOD: 2000
