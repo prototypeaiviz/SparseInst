@@ -8,7 +8,7 @@ MODEL:
       NAME: "BaseIAMDecoder"
       NUM_CLASSES: 1
   LORA:
-    ENABLED: False
+    ENABLED: True
     RANK: 8
     ALPHA: 16.0
     BACKBONE: False
@@ -28,3 +28,5 @@ SOLVER:
   CHECKPOINT_PERIOD: 2000
 TEST:
   EVAL_PERIOD: 1000
+
+#WEIGHTS: "/home/mehran/Data_AIVIZ/Thesis/to_mehron/mehron/model_final.pth"

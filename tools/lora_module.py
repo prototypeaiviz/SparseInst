@@ -472,6 +472,44 @@ def apply_lora_from_config(model, cfg):
     
     return model
 
+
+def remap_checkpoint_for_lora(model: nn.Module, checkpoint_state_dict: dict) -> dict:
+    """
+    Remap a standard (non-LoRA) checkpoint's keys to match
+    a LoRA-wrapped model's structure.
+
+    When LoRA wraps a Conv2d, the weight key changes:
+      'module.conv.weight'  ->  'module.conv.base_conv.weight'
+
+    This function renames the keys so the pretrained weights load
+    correctly into the [base_conv] of each LoRAConv2d wrapper.
+    """
+    model_keys = set(model.state_dict().keys())
+    new_state_dict = {}
+
+    for ckpt_key, value in checkpoint_state_dict.items():
+        if ckpt_key in model_keys:
+            # Key already matches the model (e.g. backbone, BN layers) — keep as is.
+            new_state_dict[ckpt_key] = value
+        else:
+            # Key is missing from the model. Try inserting '.base_conv.' before the
+            # last segment (e.g. weight/bias) to see if that's where it now lives.
+            parts = ckpt_key.rsplit(".", 1)
+            if len(parts) == 2:
+                parent_path, param_name = parts
+                candidate_key = f"{parent_path}.base_conv.{param_name}"
+                if candidate_key in model_keys:
+                    # Confirmed: this Conv2d was wrapped by LoRAConv2d. Remap it.
+                    new_state_dict[candidate_key] = value
+                else:
+                    # No matching key found — keep original so it appears in `unexpected`.
+                    new_state_dict[ckpt_key] = value
+            else:
+                new_state_dict[ckpt_key] = value
+
+    return new_state_dict
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("LoRA Application Test: SparseInst with ResNet50 Encoder")

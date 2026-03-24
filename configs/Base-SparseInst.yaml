@@ -37,3 +37,5 @@ TEST:
 DATALOADER:
   NUM_WORKERS: 6
 VERSION: 2
+
+#  WEIGHTS: "/home/mehran/Git-Thesis/SparseInst/pretrained_models/R-50.pkl"

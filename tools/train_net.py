@@ -27,7 +27,8 @@ import os
 
 sys.path.append(".")
 from sparseinst import add_sparse_inst_config, COCOMaskEvaluator
-from lora_module import apply_lora_from_config
+from lora_module import apply_lora_from_config, remap_checkpoint_for_lora
+from detectron2.checkpoint import DetectionCheckpointer
 import wandb
 
 
@@ -35,14 +36,43 @@ import wandb
 class Trainer(DefaultTrainer):
     @classmethod
     def build_model(cls, cfg):
-        """
-        Build the model and apply LoRA based on configuration before training starts.
-        """
+        """Build the model and apply LoRA before training starts."""
         model = DefaultTrainer.build_model(cfg)
-        model = apply_lora_from_config(model, cfg)
+        if cfg.MODEL.LORA.ENABLED:
+            model = apply_lora_from_config(model, cfg)
         return model
 
+    def resume_or_load(self, resume=True):
+        """
+        Override to remap checkpoint keys when LoRA is enabled.
+        This runs during TRAINING, not eval_only.
+        """
+        if self.cfg.MODEL.LORA.ENABLED:
+            print("LoRA is enabled: remapping checkpoint keys before loading...")
+            checkpoint_path = self.cfg.MODEL.WEIGHTS
+            raw_ckpt = torch.load(checkpoint_path, map_location="cpu")
+            state_dict = raw_ckpt.get("model", raw_ckpt)
+            remapped = remap_checkpoint_for_lora(self.model, state_dict)
+            missing, unexpected = self.model.load_state_dict(remapped, strict=False)
+            # Only print truly unexpected keys (LoRA A/B keys being missing is expected)
+            # real_missing = [k for k in missing if "lora_" not in k]
+            # real_unexpected = [k for k in unexpected if "lora_" not in k]
+            # if real_missing:
+            #     print(f"WARNING: Truly missing (non-LoRA) keys: {real_missing}")
+            # else:
+            #     print("there is no missing keys.")
+            # print('-' * 60)
+            # if real_unexpected:
+            #     print(f"WARNING: Truly unexpected (non-LoRA) keys: {real_unexpected}")
+            # else:
+            #     print("there is no unexpected keys")
+            # print("Checkpoint remapping complete.")
 
+        else:
+            # Standard Detectron2 checkpoint loading
+            super().resume_or_load(resume=resume)
+
+        print(f"This is the model now:\n{self.model}")
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
         """
@@ -168,7 +198,7 @@ def setup(args):
     cfg.merge_from_list(args.opts)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    cfg.OUTPUT_DIR = cfg.OUTPUT_DIR + f"Dual_NO_LORA_frozenBackbone_{timestamp}"
+    cfg.OUTPUT_DIR = cfg.OUTPUT_DIR + f"Dual_LORA_frozenBackbone_{timestamp}"
     cfg.freeze()
     default_setup(cfg, args)
     # Setup logger for "sparseinst" module
@@ -178,12 +208,17 @@ def setup(args):
 
 def main(args):
     # register_coco_instances(
-    #     "pills_train", {}, f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_ALL_MONO/train.json", f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_images/train/imgs"
+    #     "pills_train", {},
+    #     f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_ALL_MONO/train.json",
+    #     f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_images/train/imgs"
     # )
-    #
+
     # register_coco_instances(
-    #     "pills_val", {}, f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_ALL_MONO/val.json", f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_images/val/imgs"
+    #     "pills_val", {},
+    #     f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_ALL_MONO/val.json",
+    #     f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_images/val/imgs"
     # )
+
     register_coco_instances(
         "pills_train", {},
         f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/labelings/train.json",
@@ -198,7 +233,7 @@ def main(args):
     cfg = setup(args)
     wandb.init(
         project="SparseInst",
-        name="Dual_NO_LORA_frozenBackbone_SparseInst_LongRun",
+        name="Dual_LORA_frozenBackbone_SparseInst_LongRun",
         config=cfg,
         sync_tensorboard=True
     )
@@ -213,6 +248,7 @@ def main(args):
 
     trainer = Trainer(cfg)
     trainer.resume_or_load(resume=args.resume)
+
     return trainer.train()
 
 
