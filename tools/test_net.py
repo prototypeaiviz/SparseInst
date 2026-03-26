@@ -21,18 +21,17 @@ from sparseinst import COCOMaskEvaluator
 from detectron2.data.datasets import register_coco_instances
 from datetime import datetime
 from pycocotools import mask as mask_util
-
-
-device = torch.device('cuda:0')
-dtype = torch.float32
-
 import cv2
 from detectron2.utils.visualizer import Visualizer
 from detectron2.data import MetadataCatalog
 from utils_testing import SparseInst,synchronize,process_batched_inputs
+from lora_module import apply_lora_from_config, remap_checkpoint_for_lora
+
+
+device = torch.device('cuda:0')
+dtype = torch.float32
 pixel_mean = torch.Tensor([123.675, 116.280, 103.530]).to(device).view(3, 1, 1)
 pixel_std = torch.Tensor([58.395, 57.120, 57.375]).to(device).view(3, 1, 1)
-
 
 
 
@@ -45,8 +44,25 @@ def test_sparseinst_speed(cfg, fp16=False):
     model.to(device)
     print(model)
     size = (cfg.INPUT.MIN_SIZE_TEST, cfg.INPUT.MAX_SIZE_TEST)
-    DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
-        cfg.MODEL.WEIGHTS, resume=False)
+
+    # Apply LoRA wrappers BEFORE loading checkpoint so the model structure
+    # matches the keys saved in the LoRA checkpoint.
+    if cfg.MODEL.LORA.ENABLED:
+        apply_lora_from_config(model, cfg)
+        print("LoRA enabled: remapping checkpoint keys for testing...")
+        raw_ckpt = torch.load(cfg.MODEL.WEIGHTS, map_location="cpu")
+        state_dict = raw_ckpt.get("model", raw_ckpt)
+        remapped = remap_checkpoint_for_lora(model, state_dict)
+        missing, unexpected = model.load_state_dict(remapped, strict=False)
+        real_missing = [k for k in missing if "lora_" not in k]
+        real_unexpected = [k for k in unexpected if "lora_" not in k]
+        if real_missing:
+            print(f"WARNING: Truly missing (non-LoRA) keys: {real_missing}")
+        if real_unexpected:
+            print(f"WARNING: Truly unexpected (non-LoRA) keys: {real_unexpected}")
+    else:
+        DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
+            cfg.MODEL.WEIGHTS, resume=False)
 
     torch.backends.cudnn.enable = True
     torch.backends.cudnn.benchmark = False
