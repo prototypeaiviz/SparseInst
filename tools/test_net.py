@@ -14,7 +14,8 @@ from detectron2.structures import ImageList, Instances, BitMasks
 from detectron2.engine import default_argument_parser, default_setup
 from detectron2.data import build_detection_test_loader
 from detectron2.evaluation import COCOEvaluator, print_csv_format
-
+import torch
+from torchvision.ops import nms
 sys.path.append(".")
 from sparseinst import build_sparse_inst_encoder, build_sparse_inst_decoder, add_sparse_inst_config
 from sparseinst import COCOMaskEvaluator
@@ -87,6 +88,7 @@ def test_sparseinst_speed(cfg, fp16=False):
     durations = []
     json_results = []
 
+
     with torch.amp.autocast('cuda', enabled=False):
         with torch.no_grad():
             for idx, inputs in enumerate(data_loader):
@@ -95,63 +97,71 @@ def test_sparseinst_speed(cfg, fp16=False):
                 start_time = time.perf_counter()
                 output = model(images, resized_size, ori_size)
                 synchronize()
-                end = time.perf_counter() - start_time
+                duration = time.perf_counter() - start_time
+
+                # Move to CPU and handle empty detections
                 instances = output.to("cpu")
-                predicted_masks = instances.pred_masks
-                predicted_scores = instances.scores
-                for i, (mask,score) in enumerate(zip(predicted_masks, predicted_scores)):
-                    img_path = os.path.basename(inputs[0]["file_name"])
-                    mask_np = mask.numpy()
-                    score_np = score.numpy()
+                if len(instances) == 0:
+                    continue
+
+                # get_bounding_boxes()
+                if not instances.has("pred_boxes"):
+                    instances.pred_boxes = instances.pred_masks.get_bounding_boxes()
+
+                # Apply NMS to collapse the 59 masks into ~9 unique objects
+                keep = nms(instances.pred_boxes.tensor, instances.scores, iou_threshold=0.4)
+                instances = instances[keep]
+
+                # Filter by confidence threshold to remove low-score
+                high_conf_idx = instances.scores > 0.3
+                instances = instances[high_conf_idx]
+
+                # Save results to JSON
+                img_path = os.path.basename(inputs[0]["file_name"])
+
+                # Iterating through our CLEANED instances
+                for i in range(len(instances)):
+                    item = instances[i]
+                    mask_tensor = item.pred_masks.tensor[0]
+                    mask_np = mask_tensor.cpu().numpy()
+                    score_val = item.scores[0].item()
+
+                    # RLE Encoding for COCO format
                     rle = mask_util.encode(np.asfortranarray(mask_np.astype(np.uint8)))
-                    rle["counts"] = rle["counts"].decode("utf-8")  # make JSON serializable
+                    rle["counts"] = rle["counts"].decode("utf-8")
+
                     json_results.append({
-                        "image_id": os.path.basename(img_path),
-                        "score": float(score_np),
-                        "segmentation": rle
+                        "image_id": img_path,
+                        "score": float(score_val),
+                        "segmentation": rle,
+                        "category_id": item.pred_classes[0].item()
                     })
 
-
-                durations.append(end)
-                if idx % 1000 == 0:
-                    print("process: [{}/{}] fps: {:.3f}".format(idx,
-                                                                len(data_loader), 1/np.mean(durations[100:])))
-                evaluator.process(inputs, [{"instances": output}])
-
+                # Visualization (Only for the first 100 images)
                 if idx < 100:
-                    # 1. Get the image as it exists in the input (usually resized/transformed)
                     img_tensor = inputs[0]["image"].permute(1, 2, 0).cpu().numpy()
-
-                    # 2. IMPORTANT: SparseInst resizes masks to 'ori_size'.
-                    # We must ensure the visualizer's canvas matches the mask shape.
-                    # We use 'ori_size' which is (height, width)
                     h_ori, w_ori = ori_size
-
-                    # If the image in 'inputs' is already resized, we should resize it
-                    # to match the masks before visualizing
                     img_for_vis = cv2.resize(img_tensor, (w_ori, h_ori))
 
-                    # 3. Initialize Visualizer with the correctly sized image
                     visualizer = Visualizer(img_for_vis, metadata=metadata, scale=1.0)
 
-                    if output is not None:
-                        # Move output to CPU
-                        cpu_output = output.to("cpu")
+                    # This now draws ONLY the NMS-filtered best masks
+                    vis_output = visualizer.draw_instance_predictions(instances)
+                    vis_img = vis_output.get_image()
 
-                        # 4. Draw
-                        vis_output = visualizer.draw_instance_predictions(cpu_output)
-                        vis_img = vis_output.get_image()
+                    out_filename = os.path.join(current_visualize_name, f'res{idx}.jpg')
+                    cv2.imwrite(out_filename, vis_img[:, :, ::-1])
+                    print(f"Saved: {out_filename} | Objects detected: {len(instances)}")
 
-                        # 5. Save (BGR for cv2)
-                        out_img_name = f'res{idx}.jpg'
-                        out_filename = os.path.join(current_visualize_name, out_img_name)
-                        cv2.imwrite(out_filename, vis_img[:, :, ::-1])
-                        print(f"Saved: {out_filename} with shape {vis_img.shape}")
-                   # evaluate
+                durations.append(duration)
+                if idx % 100 == 0:
+                    print(f"Process: [{idx}/{len(data_loader)}] FPS: {1 / np.mean(durations[-10:]):.2f}")
+
+    # evaluate
     results = evaluator.evaluate()
     print_csv_format(results)
     # Save prediction results
-    json_out_path = os.path.join(output_folder, "detectron_predictions.json")
+    json_out_path = os.path.join(output_folder, "BEST_SCORE_TEST_detectron_predictions.json")
     with open(json_out_path, "w") as f:
         json.dump(json_results, f, indent=2)
     latency = np.mean(durations[100:])
@@ -179,15 +189,6 @@ if __name__ == '__main__':
                       help="support fp16 for inference")
     args = args.parse_args()
     print("Command Line Args:", args)
-    # register_coco_instances(
-    #     "pills_train", {}, f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/train.json", f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/train/imgs"
-    # )
-    #
-    # register_coco_instances(
-    #     "pills_val", {}, f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/val.json", f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/val/imgs"
-    # )
-
-
     # register_coco_instances(
     #     "pills_train", {},
     #     f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/train.json",
