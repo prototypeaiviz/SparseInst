@@ -1,12 +1,15 @@
-import json
-import pandas as pd
+from pycocotools import mask as mask_util
 from typing import Dict, List
 from loguru import logger
 from pathlib import Path
-from pycocotools import mask as mask_util
+import pandas as pd
 import numpy as np
+import json
 import cv2
 import os
+
+
+
 def get_dataset_split(filename: str) -> str:
     """
     Infers the dataset split/type from the filename.
@@ -15,6 +18,8 @@ def get_dataset_split(filename: str) -> str:
     if "-" in filename:
         return filename.split("-")[0]
     return "other"
+
+
 def calculate_iou(mask1: np.ndarray, mask2: np.ndarray) -> float:
     """
     Calculates the Intersection over Union (IoU) between two binaray masks.
@@ -26,6 +31,8 @@ def calculate_iou(mask1: np.ndarray, mask2: np.ndarray) -> float:
         return 1.0 if intersection == 0 else 0.0
 
     return intersection / union
+
+
 def is_rectangle_overlapping(bbox, exclusion_zone):
     x1, y1, w1, h1 = bbox
     x2, y2, w2, h2 = exclusion_zone
@@ -33,6 +40,8 @@ def is_rectangle_overlapping(bbox, exclusion_zone):
         return False
     else:
         return True
+
+
 def polygon_to_mask(polygon: List[List[int]], width: int, height: int) -> np.ndarray:
     """
     Converts a list of polygon points into a binary mask image.
@@ -59,18 +68,14 @@ def polygon_to_mask(polygon: List[List[int]], width: int, height: int) -> np.nda
     return mask
 
 
-import json
-from pathlib import Path
-
-
 def load_coco_gt_map(coco_json_path: Path):
     with open(coco_json_path, "r") as f:
         data = json.load(f)
 
-    # 1. Map category IDs to names
+    # Map category IDs to names
     cat_id_to_name = {cat['id']: cat['name'] for cat in data.get('categories', [])}
 
-    # 2. Build the image map
+    # Build the image map
     # Key: file_name, Value: metadata + empty annotations list
     gt_map = {}
     for img in data['images']:
@@ -80,9 +85,8 @@ def load_coco_gt_map(coco_json_path: Path):
             "annotations": {}  # We'll store annotations as a dict {ann_id: data}
         }
 
-    # 3. Fill annotations into the correct image
-    # Note: coco_json_path may use integer image_ids,
-    # but your function uses filenames (image_id in pred["image_id"]).
+    # Fill annotations into the correct image
+    # coco_json_path may use integer image_ids,
     img_id_to_filename = {img['id']: img['file_name'] for img in data['images']}
 
     for ann in data['annotations']:
@@ -95,6 +99,8 @@ def load_coco_gt_map(coco_json_path: Path):
             }
 
     return gt_map
+
+
 def calculate_detectron_iou(
         gt_map: Dict,
         detectron_json_path: Path,
@@ -130,18 +136,22 @@ def calculate_detectron_iou(
 
         # Decode Detectron2 RLE mask → binary
         rle = pred["segmentation"]
+
+        # JSON loads bytes as strings; pycocotools needs bytes for 'counts'
+        if isinstance(rle.get("counts"), str):
+            rle["counts"] = rle["counts"].encode("utf-8")
+
         pred_mask = mask_util.decode(rle)
         pred_mask = (pred_mask > 0).astype(np.uint8)
 
-        # --- Ignore left/right border ---
-        pred_mask[:, :ignore_border] = 0        # left
-        pred_mask[:, width-ignore_border:] = 0  # right
+        # Ignore left/right border on prediction
+        pred_mask[:, :ignore_border] = 0
+        pred_mask[:, width - ignore_border:] = 0
 
         iou_best = 0.0
         best_ann_id = None
-        gt_area = 0
+        gt_area_best = 0
         pred_area = pred_mask.sum()
-        area_ratio = 0.0
         class_name = "unknown"
 
         # Match this prediction with the GT instance that gives highest IoU
@@ -151,43 +161,66 @@ def calculate_detectron_iou(
                 continue
 
             gt_mask = polygon_to_mask(gt_polygon, width, height)
+
+            # Apply same border ignore to GT for consistency
+            gt_mask[:, :ignore_border] = 0
+            gt_mask[:, width - ignore_border:] = 0
+
             iou = calculate_iou(gt_mask, pred_mask)
 
             if iou > iou_best:
                 iou_best = iou
                 best_ann_id = ann_id
-                gt_area = gt_mask.sum()
-                class_name = gt_ann["class_name"]
+                gt_area_best = gt_mask.sum()
+                class_name = gt_ann.get("class_name", "unknown")
 
-        if gt_area > 0:
-            area_ratio = pred_area / gt_area
+        area_ratio = pred_area / gt_area_best if gt_area_best > 0 else 0.0
+        if iou:
+            instance_results.append({
+                "filename": image_id,
+                "dataset_split": dataset_split,
+                "annotation_id": best_ann_id if best_ann_id else "N/A",
+                "class_name": class_name,
+                "IoU": iou_best,
+                "GT_Area": gt_area_best,
+                "Pred_Area": pred_area,
+                "Area_Ratio": area_ratio,
+                "prediction_source": model_source
+            })
 
-        instance_results.append({
-            "filename": image_id,
-            "dataset_split": dataset_split,
-            "annotation_id": best_ann_id if best_ann_id else "N/A",
-            "class_name": class_name,
-            "IoU": iou_best,
-            "GT_Area": gt_area,
-            "Pred_Area": pred_area,
-            "Area_Ratio": area_ratio,
-            "prediction_source": model_source
-        })
+    # Final Aggregation
+    df_instances = pd.DataFrame(instance_results)
 
-    df_instance = pd.DataFrame(instance_results)
-    df_instance.to_csv(os.path.join(output_path,"results.csv"))
-    logger.info(f"Finished processing {len(df_instance)} Detectron2 instances.")
-    return df_instance
+    if not df_instances.empty:
+        # Calculate summary per dataset split
+        dataset_summary = df_instances.groupby('dataset_split')['IoU'].mean().reset_index()
+        dataset_summary.columns = ['dataset_split', 'mean_IoU']
+
+        # Save summary and full results
+        os.makedirs(output_path, exist_ok=True)
+        summary_csv = Path(output_path) / f"{model_source}_dataset_summary.csv"
+        dataset_summary.to_csv(summary_csv, index=False)
+        df_instances.to_csv(os.path.join(output_path, "results.csv"), index=False)
+
+        logger.info(f"Finished processing {len(df_instances)} instances.")
+    else:
+        logger.warning("No instances processed. Results files were not created.")
+
+    return df_instances
+
+
 def main():
-    gn_path = Path("/media/aiviz05/New Volume/Data/TISSMART/Detectron/cvat-benchmark/cvat-output-coco.json")
+    gn_path = Path("/home/mehran/Desktop/SparseInst_DATA/cvat-benchmark/cvat-output-coco.json")
     gt_map = load_coco_gt_map(gn_path)
-    path_to_results = '/home/aiviz05/Projects/SparseInst/output/sparse_inst_r50_base_longrun/inference_20260211_171838'
+    path_to_results = Path('/home/mehran/Git-Thesis/SparseInst/tools/output/Dual_NO_LORA_frozenBackbone_20260319_125500/inference_20260327_111720')
 
     detectron_json_path = Path(os.path.join(path_to_results,"detectron_predictions.json"))
     df_detectron_instance = calculate_detectron_iou(gt_map,
                                                     detectron_json_path,
                                                     model_source="Detectron2",
                                                     output_path=path_to_results)
+    print(df_detectron_instance)
+
 
 if __name__ == "__main__":
     main()
