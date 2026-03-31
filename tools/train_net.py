@@ -53,8 +53,8 @@ class Trainer(DefaultTrainer):
             raw_ckpt = torch.load(checkpoint_path, map_location="cpu")
             state_dict = raw_ckpt.get("model", raw_ckpt)
             remapped = remap_checkpoint_for_lora(self.model, state_dict)
-            missing, unexpected = self.model.load_state_dict(remapped, strict=False)
-            # Only print truly unexpected keys (LoRA A/B keys being missing is expected)
+            # missing, unexpected = self.model.load_state_dict(remapped, strict=False)
+            # # Only print truly unexpected keys (LoRA A/B keys being missing is expected)
             # real_missing = [k for k in missing if "lora_" not in k]
             # real_unexpected = [k for k in unexpected if "lora_" not in k]
             # if real_missing:
@@ -198,7 +198,7 @@ def setup(args):
     cfg.merge_from_list(args.opts)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    cfg.OUTPUT_DIR = cfg.OUTPUT_DIR + f"Dual_LORA_frozenBackbone_{timestamp}"
+    cfg.OUTPUT_DIR = cfg.OUTPUT_DIR + f"_Dual_LORA_4_backbone_{timestamp}"
     cfg.freeze()
     default_setup(cfg, args)
     # Setup logger for "sparseinst" module
@@ -233,7 +233,7 @@ def main(args):
     cfg = setup(args)
     wandb.init(
         project="SparseInst",
-        name="Dual_LORA_frozenBackbone_SparseInst_LongRun",
+        name="Dual_LORA_4_backbone_March31",
         config=cfg,
         sync_tensorboard=True
     )
@@ -250,7 +250,6 @@ def main(args):
     trainer.resume_or_load(resume=args.resume)
 
     return trainer.train()
-
 
 if __name__ == "__main__":
     args = default_argument_parser().parse_args()
