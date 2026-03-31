@@ -4,7 +4,7 @@ MODEL:
   PIXEL_MEAN: [123.675, 116.280, 103.530]
   PIXEL_STD: [58.395, 57.120, 57.375]
   BACKBONE:
-    FREEZE_AT: 0
+    FREEZE_AT: 4
     NAME: "build_resnet_backbone"
   RESNETS:
     NORM: "FrozenBN"
