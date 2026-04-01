@@ -432,20 +432,35 @@ def apply_lora_from_config(model, cfg):
         
     rank = cfg.MODEL.LORA.RANK
     alpha = cfg.MODEL.LORA.ALPHA
-    
+
+    # Compute which backbone CHILD module names to skip
+    FREEZE_AT_TO_STAGES = {
+        0: [],
+        1: ["stem"],
+        2: ["stem", "res2"],
+        3: ["stem", "res2", "res3"],
+        4: ["stem", "res2", "res3", "res4"],
+        5: ["stem", "res2", "res3", "res4", "res5"],
+    }
+    freeze_at = getattr(cfg.MODEL.BACKBONE, "FREEZE_AT", 0)
+    frozen_backbone_stages = FREEZE_AT_TO_STAGES.get(freeze_at, [])
+
     targets = []
-    # skips = {}        ### I need to add this part
+    skip = {}
 
     if cfg.MODEL.LORA.BACKBONE:
-        targets.append("backbone")
+        if freeze_at == 5:
+            print(f"FREEZE_AT: {freeze_at}, so the entire backbone is frozen, skipping backbone LoRA.")
+        else:
+            targets.append("backbone")
+            if frozen_backbone_stages:
+                skip["backbone"] = frozen_backbone_stages
+                print(f"Backbone frozen stages (no LoRA): {frozen_backbone_stages}")
+
     if cfg.MODEL.LORA.ENCODER:
         targets.append("encoder")
     if cfg.MODEL.LORA.DECODER:
         targets.append("decoder")
-
-    # Add Skip to the code
-    # if cfg.MODEL.LORA.SKIP:
-    #     pass
 
     print(f"Applying LoRA with Rank={rank}, Alpha={alpha}...")
     print(f"Targets: {targets}")
@@ -455,7 +470,7 @@ def apply_lora_from_config(model, cfg):
         targets=targets,
         rank=rank,
         alpha=alpha,
-        skip=None
+        skip=skip if skip else None
     )
     
     print(f"Replaced {total} Conv2d layers.")
