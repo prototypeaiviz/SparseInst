@@ -44,35 +44,75 @@ class Trainer(DefaultTrainer):
 
     def resume_or_load(self, resume=True):
         """
-        Override to remap checkpoint keys when LoRA is enabled.
-        This runs during TRAINING, not eval_only.
+        Two-pass LoRA-aware checkpoint loading.
+
+        Pass 1: Use Detectron2's standard DetectionCheckpointer. It handles
+                all checkpoint formats (pkl, caffe2, DDP 'module.' prefix, ndarray
+                conversion, resume-from-last-saved-checkpoint logic). Encoder/decoder
+                weights in LoRA-wrapped layers will be silently skipped — expected.
+
+        Pass 2: Do a targeted second load to fill the `base_conv` weights for
+                layers that Pass 1 skipped because of the LoRA key name change
+                (e.g. checkpoint: 'encoder.fpn_outputs.0.weight'
+                       model expects: 'encoder.fpn_outputs.0.base_conv.weight').
+
+        Without Pass 1, raw `torch.load()` misses pkl/caffe2 format handling,
+        DDP prefix stripping, and resume logic — causing random initialization
+        and loss ≈ 200 on the very first iteration.
         """
-        if self.cfg.MODEL.LORA.ENABLED:
-            print("LoRA is enabled: remapping checkpoint keys before loading...")
-            checkpoint_path = self.cfg.MODEL.WEIGHTS
+        # Pass 1 — standard Detectron2 loading
+        super().resume_or_load(resume=resume)
+
+        if not self.cfg.MODEL.LORA.ENABLED:
+            return  # nothing LoRA-specific to do
+
+        # Determine which checkpoint file was actually loaded
+        # (could be last checkpoint in OUTPUT_DIR when resume=True)
+        last_ckpt = self.checkpointer.get_checkpoint_file()
+        checkpoint_path = last_ckpt if (resume and last_ckpt) else self.cfg.MODEL.WEIGHTS
+
+        if not checkpoint_path:
+            return
+
+        print("LoRA Pass 2: filling base_conv weights for LoRA-wrapped layers...")
+        try:
             raw_ckpt = torch.load(checkpoint_path, map_location="cpu")
-            state_dict = raw_ckpt.get("model", raw_ckpt)
-            remapped = remap_checkpoint_for_lora(self.model, state_dict)
-            # missing, unexpected = self.model.load_state_dict(remapped, strict=False)
-            # # Only print truly unexpected keys (LoRA A/B keys being missing is expected)
-            # real_missing = [k for k in missing if "lora_" not in k]
-            # real_unexpected = [k for k in unexpected if "lora_" not in k]
-            # if real_missing:
-            #     print(f"WARNING: Truly missing (non-LoRA) keys: {real_missing}")
-            # else:
-            #     print("there is no missing keys.")
-            # print('-' * 60)
-            # if real_unexpected:
-            #     print(f"WARNING: Truly unexpected (non-LoRA) keys: {real_unexpected}")
-            # else:
-            #     print("there is no unexpected keys")
-            # print("Checkpoint remapping complete.")
+        except Exception as e:
+            print(f"  WARNING: Could not load file for LoRA Pass 2: {e}")
+            return
 
-        else:
-            # Standard Detectron2 checkpoint loading
-            super().resume_or_load(resume=resume)
+        state_dict = raw_ckpt.get("model", raw_ckpt)
 
-        print(f"This is the model now:\n{self.model}")
+        # Strip "module." prefix if saved from DDP training
+        state_dict = {k.replace("module.", "", 1) if k.startswith("module.") else k: v
+                      for k, v in state_dict.items()}
+
+        model_keys = set(self.model.state_dict().keys())
+        params_buffers = dict(
+            list(self.model.named_parameters()) +
+            list(self.model.named_buffers())
+        )
+
+        loaded_count = 0
+        with torch.no_grad():
+            for ckpt_key, value in state_dict.items():
+                if ckpt_key in model_keys:
+                    continue   # already loaded by Pass 1
+                parts = ckpt_key.rsplit(".", 1)
+                if len(parts) != 2:
+                    continue
+                parent_path, param_name = parts
+                candidate = f"{parent_path}.base_conv.{param_name}"
+                if candidate in model_keys and candidate in params_buffers:
+                    target = params_buffers[candidate]
+                    params_buffers[candidate].copy_(
+                        torch.as_tensor(value).to(target.device, target.dtype)
+                    )
+                    loaded_count += 1
+
+        print(f"  LoRA Pass 2 complete: loaded {loaded_count} base_conv tensors.")
+
+
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
         """
@@ -198,7 +238,7 @@ def setup(args):
     cfg.merge_from_list(args.opts)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    cfg.OUTPUT_DIR = cfg.OUTPUT_DIR + f"_Dual_LORA_4_backbone_{timestamp}"
+    cfg.OUTPUT_DIR = cfg.OUTPUT_DIR + f"_Dual_LORA_No_backbone_APRIL_2{timestamp}"
     cfg.freeze()
     default_setup(cfg, args)
     # Setup logger for "sparseinst" module
@@ -207,40 +247,61 @@ def setup(args):
 
 
 def main(args):
+
+    # AIVIZ-05 config paths:
+
     # register_coco_instances(
     #     "pills_train", {},
-    #     f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_ALL_MONO/train.json",
-    #     f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_images/train/imgs"
+    #     f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/labelings/train.json",
+    #     f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/data/train/imgs"
     # )
-
+    #
     # register_coco_instances(
     #     "pills_val", {},
-    #     f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_ALL_MONO/val.json",
-    #     f"/home/mehran/Desktop/SparseInst_DATA/SparseInst_images/val/imgs"
+    #     f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/labelings/val.json",
+    #     f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/data/val/imgs"
     # )
 
+    # Personal paths
     register_coco_instances(
         "pills_train", {},
-        f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/labelings/train.json",
-        f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/data/train/imgs"
+        f"/home/mehran/Desktop/Stuff/SparseInst_ALL_DUAL/train.json",
+        f"/home/mehran/Desktop/Stuff/SparseInst_ALL_DUAL/train/imgs"
     )
 
     register_coco_instances(
         "pills_val", {},
-        f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/labelings/val.json",
-        f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/data/val/imgs"
+        f"/home/mehran/Desktop/Stuff/SparseInst_ALL_DUAL/val.json",
+        f"/home/mehran/Desktop/Stuff/SparseInst_ALL_DUAL/val/imgs"
     )
+
     cfg = setup(args)
     wandb.init(
         project="SparseInst",
-        name="Dual_LORA_4_backbone_March31",
+        name="Dual_LORA_No_backbone_APRIL_2",
         config=cfg,
         sync_tensorboard=True
     )
     if args.eval_only:
         model = Trainer.build_model(cfg)
-        DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
-            cfg.MODEL.WEIGHTS, resume=args.resume)
+        if cfg.MODEL.LORA.ENABLED:
+            # The checkpoint was saved by a LoRA model, but if we ever load a
+            # non-LoRA checkpoint for eval we still need the remapping.
+            # Use the same model-aware remapping as the training path.
+            print("LoRA enabled: remapping checkpoint keys for eval...")
+            raw_ckpt = torch.load(cfg.MODEL.WEIGHTS, map_location="cpu")
+            state_dict = raw_ckpt.get("model", raw_ckpt)
+            remapped = remap_checkpoint_for_lora(model, state_dict)
+            missing, unexpected = model.load_state_dict(remapped, strict=False)
+            real_missing = [k for k in missing if "lora_" not in k]
+            real_unexpected = [k for k in unexpected if "lora_" not in k]
+            if real_missing:
+                print(f"WARNING: Truly missing (non-LoRA) keys: {real_missing}")
+            if real_unexpected:
+                print(f"WARNING: Truly unexpected (non-LoRA) keys: {real_unexpected}")
+        else:
+            DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
+                cfg.MODEL.WEIGHTS, resume=args.resume)
         res = Trainer.test(cfg, model)
         if comm.is_main_process():
             verify_results(cfg, res)
@@ -248,8 +309,8 @@ def main(args):
 
     trainer = Trainer(cfg)
     trainer.resume_or_load(resume=args.resume)
-
     return trainer.train()
+
 
 if __name__ == "__main__":
     args = default_argument_parser().parse_args()
