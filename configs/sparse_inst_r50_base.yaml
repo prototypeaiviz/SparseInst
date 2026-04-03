@@ -2,7 +2,7 @@ _BASE_: "Base-SparseInst.yaml"
 MODEL:
   SEM_SEG_HEAD:
     NUM_CLASSES: 1
-  WEIGHTS: "/home/aiviz05/Projects/SparseInst/output/PillNet_March_10/model_final.pth"
+  WEIGHTS: "/home/mehran/Git-Thesis/SparseInst/PillNet_Latest/PillNet_New/model_final.pth"
   SPARSE_INST:
     DECODER:
       NAME: "BaseIAMDecoder"
