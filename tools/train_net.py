@@ -250,30 +250,30 @@ def main(args):
 
     # AIVIZ-05 config paths:
 
-    # register_coco_instances(
-    #     "pills_train", {},
-    #     f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/labelings/train.json",
-    #     f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/data/train/imgs"
-    # )
-    #
-    # register_coco_instances(
-    #     "pills_val", {},
-    #     f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/labelings/val.json",
-    #     f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/data/val/imgs"
-    # )
-
-    # Personal paths
     register_coco_instances(
         "pills_train", {},
-        f"/home/mehran/Desktop/Stuff/SparseInst_ALL_DUAL/train.json",
-        f"/home/mehran/Desktop/Stuff/SparseInst_ALL_DUAL/train/imgs"
+        f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/labelings/train.json",
+        f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/data/train/imgs"
     )
 
     register_coco_instances(
         "pills_val", {},
-        f"/home/mehran/Desktop/Stuff/SparseInst_ALL_DUAL/val.json",
-        f"/home/mehran/Desktop/Stuff/SparseInst_ALL_DUAL/val/imgs"
+        f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/labelings/val.json",
+        f"/media/aiviz05/New Volume/Data/TISSMART/Detectron/SparseInst_ALL_DUAL/data/val/imgs"
     )
+
+    # Personal paths
+    # register_coco_instances(
+    #     "pills_train", {},
+    #     f"/home/mehran/Desktop/Stuff/SparseInst_ALL_DUAL/train.json",
+    #     f"/home/mehran/Desktop/Stuff/SparseInst_ALL_DUAL/train/imgs"
+    # )
+    #
+    # register_coco_instances(
+    #     "pills_val", {},
+    #     f"/home/mehran/Desktop/Stuff/SparseInst_ALL_DUAL/val.json",
+    #     f"/home/mehran/Desktop/Stuff/SparseInst_ALL_DUAL/val/imgs"
+    # )
 
     cfg = setup(args)
     wandb.init(
