@@ -238,7 +238,7 @@ def setup(args):
     cfg.merge_from_list(args.opts)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    cfg.OUTPUT_DIR = cfg.OUTPUT_DIR + f"_Dual_LORA_No_backbone_APRIL_2{timestamp}"
+    cfg.OUTPUT_DIR = cfg.OUTPUT_DIR + f"_Dual_LORA_4_backbone_APRIL_3{timestamp}"
     cfg.freeze()
     default_setup(cfg, args)
     # Setup logger for "sparseinst" module
@@ -278,7 +278,7 @@ def main(args):
     cfg = setup(args)
     wandb.init(
         project="SparseInst",
-        name="Dual_LORA_No_backbone_APRIL_2",
+        name="_Dual_LORA_4_backbone_APRIL_3",
         config=cfg,
         sync_tensorboard=True
     )
