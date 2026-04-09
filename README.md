@@ -262,16 +262,191 @@ If you find SparseInst is useful in your research or applications, please consid
 }
 
 ```
+---
+# MODIFICATIONS DONE AT AIVIZ
+## Freezing Concept in SparseInst Model
+### `FREEZE_AT` vs LoRA Conflict
 
-### CUSTOM TRAINING FOR AIVIZ
-The only thing you need to do is to register the custom datasets in COCO format in main function of tools/train_net.py.
-In tools/train_net.py, in main function, in register_coco_instances, change 'json_file' and 'image_root' paths based on your system.
-For training, download the pickle file from here: https://drive.google.com/file/d/1Ee6nPXlj1eewAnooYtoPtLzbRp_mDxfB/view?usp=sharing, then make a directory in
-your working directory(SparseInst) named 'pretrained_models' and put the pickle file there.
-Now everything is ready, train the model with the following command:
-python tools/train_net.py --config-file configs/sparse_inst_r50_base.yaml --num-gpus 1
+**Problem:** Setting `BACKBONE=True` in LoRA config AND `FREEZE_AT=4` in the backbone
+config caused LoRA adapters to be injected into the frozen backbone stages (res2–res4).
+Then `freeze_all_but_lora()` re-enabled the LoRA adapter weights in those stages,
+completely bypassing Detectron2's `FREEZE_AT` directive.
+
+**Root cause:** The three-step execution order:
+1. `build_model` → Detectron2 freezes res2–res4 via `FREEZE_AT`.
+2. `apply_lora_to_model` → Injects `LoRAConv2d` into ALL backbone 3×3 convs (including res2–res4).
+3. `freeze_all_but_lora` → Unfreezes `lora_A` and `lora_B` in **every** `LoRAConv2d` — including the ones in the "frozen" stages. `FREEZE_AT` override is lost.
+
+**Fix:** `apply_lora_from_config` now reads `FREEZE_AT` and computes which backbone
+child modules to skip before calling `apply_lora_to_model`:
+
+```python
+FREEZE_AT_TO_STAGES = {
+    0: [],
+    2: ["stem", "res2"],
+    3: ["stem", "res2", "res3"],
+    4: ["stem", "res2", "res3", "res4"],
+    5: ["stem", "res2", "res3", "res4", "res5"],  # entire backbone frozen
+}
+freeze_at = cfg.MODEL.BACKBONE.FREEZE_AT
+frozen_stages = FREEZE_AT_TO_STAGES.get(freeze_at, [])
+
+if cfg.MODEL.LORA.BACKBONE:
+    skip["backbone"] = frozen_stages   # These stages get NO LoRA injection
+```
+
+With this fix, LoRA adapters are only created in stages that are actually trainable.
+`freeze_all_but_lora` then only unfreezes those adapters — `FREEZE_AT` is fully respected.
+
+---
 
 
+## Configuration Setup
+
+### `sparseinst/config.py` — Registering LoRA defaults
+
+Detectron2's YACS config is strictly typed. Every key used in a YAML must be pre-declared:
+
+```python
+cfg.MODEL.LORA = CN()
+cfg.MODEL.LORA.ENABLED  = False
+cfg.MODEL.LORA.RANK     = 8
+cfg.MODEL.LORA.ALPHA    = 16.0    # Must be float, not int
+cfg.MODEL.LORA.BACKBONE = False
+cfg.MODEL.LORA.ENCODER  = False
+cfg.MODEL.LORA.DECODER  = False
+```
+
+### `configs/Base-SparseInst.yaml` — Providing merge base
+
+```yaml
+MODEL:
+  LORA:
+    ENABLED: False
+    RANK: 8
+    ALPHA: 16.0
+    BACKBONE: False
+    ENCODER: False
+    DECODER: False
+```
+
+This block must exist in the base YAML so that experiment YAMLs can override individual keys.
+
+### Example experiment YAML override
+
+```yaml
+# configs/sparse_inst_r50.yaml
+_BASE_: "Base-SparseInst.yaml"
+MODEL:
+  WEIGHTS: "output/monocolor_baseline/model_final.pth"
+  BACKBONE:
+    FREEZE_AT: 5   # Entire backbone frozen
+  LORA:
+    ENABLED: True
+    RANK: 8
+    ALPHA: 16.0
+    BACKBONE: False   # No LoRA on backbone (it's fully frozen anyway)
+    ENCODER: True
+    DECODER: True
+```
+---
+
+
+## Training Configuration Guide
+
+Every training scenario is controlled **entirely through the YAML config file**.
+No Python code needs to change between experiments.
+
+---
+
+### Scenario A — Full Fine-Tune (No Freezing, No LoRA)
+Train every weight in the entire model. Use this only if you have a large dataset.
+For a small pill dataset this will likely overfit badly.
+
+```yaml
+_BASE_: "Base-SparseInst.yaml"
+MODEL:
+  WEIGHTS: "pretrained_models/R-50.pkl"
+  BACKBONE:
+    FREEZE_AT: 0        # Train the entire backbone
+  LORA:
+    ENABLED: False      # No LoRA at all
+SOLVER:
+  IMS_PER_BATCH: 8
+  BASE_LR: 0.00005
+  MAX_ITER: 3000        # e.g. 60 epochs on 400 images at batch 8
+  STEPS: (2000, 2700)   # Drop LR at 67% and 90% of training
+```
+
+---
+
+### Scenario B — Frozen Backbone, Full Encoder/Decoder (Standard Transfer Learning)
+
+```yaml
+_BASE_: "Base-SparseInst.yaml"
+MODEL:
+  WEIGHTS: "pretrained_models/sparse_inst_r50_base.pth"
+  BACKBONE:
+    FREEZE_AT: 5        # Freeze the ENTIRE backbone (stem + res2–res5)
+  LORA:
+    ENABLED: False      # No LoRA — encoder and decoder train fully
+SOLVER:
+  IMS_PER_BATCH: 8
+  BASE_LR: 0.00005
+  MAX_ITER: 3000
+  STEPS: (2000, 2700)
+```
+
+
+---
+
+### Scenario C — Frozen Backbone + LoRA on Encoder and Decoder
+
+```yaml
+_BASE_: "Base-SparseInst.yaml"
+MODEL:
+  WEIGHTS: "output/monocolor_baseline/model_final.pth"  # Start from a fine-tuned baseline
+  BACKBONE:
+    FREEZE_AT: 5
+  LORA:
+    ENABLED: True
+    RANK: 4             # Start here. Try 8 if underfitting.
+    ALPHA: 16.0
+    BACKBONE: False     # No LoRA on backbone (it's fully frozen anyway)
+    ENCODER: True       # LoRA on FPN output 3×3 convolutions
+    DECODER: True       # LoRA on inst_convs and mask_convs
+SOLVER:
+  IMS_PER_BATCH: 8
+  BASE_LR: 0.00005
+  MAX_ITER: 3000
+  STEPS: (2000, 2700)
+```
+---
+
+### Scenario D — Partially Frozen Backbone + LoRA on Unfrozen Backbone Stages
+Use this when you want to allow only the deepest backbone stages (res4, res5) to be adapted
+while keeping the early low-level feature extractors (res2, res3) frozen.
+
+```yaml
+_BASE_: "Base-SparseInst.yaml"
+MODEL:
+  WEIGHTS: "output/monocolor_baseline/model_final.pth"
+  BACKBONE:
+    FREEZE_AT: 3        # Freeze stem, res2, res3. Leave res4 and res5 trainable.
+  LORA:
+    ENABLED: True
+    RANK: 4
+    ALPHA: 16.0
+    BACKBONE: True      # LoRA on backbone — but only on the UNFROZEN stages (res4, res5)
+    ENCODER: True       # LoRA code automatically skips frozen stages (see FREEZE_AT fix)
+    DECODER: True
+SOLVER:
+  IMS_PER_BATCH: 8
+  BASE_LR: 0.00005
+  MAX_ITER: 3000
+  STEPS: (2000, 2700)
+```
+---
 ## License
 
 SparseInst is released under the [MIT Licence](LICENCE).
